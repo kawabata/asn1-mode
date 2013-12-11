@@ -5,7 +5,7 @@
 ;; Description: ASN.1/GDMO Editing Mode
 ;; Author: Taichi Kawabata <kawabata.taichi_at_gmail.com>
 ;; Created: 2013-11-22
-;; Modified: 2013-11-23
+;; Modified: 2013-12-11
 ;; Keywords: languages, processes, tools
 ;; Namespace: asn1-mode-
 ;; URL: https://github.com/kawabata/asn1-mode/
@@ -25,16 +25,21 @@
 
 ;;; Commentary:
 
+;; # ASN.1/GDMO mode for GNU Emacs
+;;
 ;; This is a major mode for editing ASN.1 specification.
+;;
+;; ## Setup
+;;
 ;; For installation, please add the following lines to your ~/.emacs:
 ;;
+;; ```el
 ;; (add-to-list 'auto-mode-alist '("\\.asn1$" . asn1-mode))
-
-;;; References
-
-;; ASN.1 -- ITU-T X 680 (http://www.itu.int/ITU-T/recommendations/rec.aspx?rec=9604)
-;;          ITU-T X 681 (CLASS IDENTIFIER & WITH SYNTAX)
-;; GDMO  -- ITU-T X.722 (http://www.itu.int/ITU-T/recommendations/rec.aspx?rec=3061)
+;; ```
+;;
+;; ## Reference
+;; - [ITU-T X.680](http://www.itu.int/ITU-T/recommendations/rec.aspx?rec=9604)
+;; - [ITU-T X.722](http://www.itu.int/ITU-T/recommendations/rec.aspx?rec=3061)
 
 ;;; Code:
 
@@ -179,10 +184,9 @@
       "VideotexString"
       "VisibleString"
       "WITH"
-      ;;
+      ;; ITU-T X.681
       "OBJECT IDENTIFIER"
       "WITH SYNTAX"
-      ;;
       ;; GDMO (duplicate keywords may appear)
       "MANAGED OBJECT CLASS"
       "DERIVED FROM"
@@ -235,7 +239,7 @@
       ;;
       "ATTRIBUTE"
       "WITH ATTRIBUTE SYNTAX"
-      "MATCHES" "FOR"
+      "MATCHES FOR"
       "PARAMETERS"
       "EQUALITY"
       "ORDERING"
@@ -243,8 +247,8 @@
       "SET-COMPARISON"
       "SET-INTERSECTION"
       ;;
-      "ATTRIBUTE" "GROUP"
-      "GROUP" "ELEMENTS"
+      "ATTRIBUTE GROUP"
+      "GROUP ELEMENTS"
       "FIXED"
       "DESCRIPTION"
       ;;
@@ -323,62 +327,89 @@
 
 ;; Lexical Tokenizer
 
-(defvar asn1-mode-token-regexp-alist
-  `(;;
-    ("_GDMO_OPEN"
-     . ,(regexp-opt
-         '(
-           ;; template
-           "MANAGED OBJECT CLASS"
-           "BEHAVIOUR"
-           "NAME BINDING"
-           "PACKAGE"
-           "ATTRIBUTE"
-           "ACTION"
-           "NOTIFICATION"
-           "PARAMETER"
-           "ATTRIBUTE GROUP"
-           ;; supportings
-           "DERIVED FROM"
-           "CHARACTERIZED BY"
-           "CONDITIONAL PACKAGES"
-           "SUBORDINATE OBJECT CLASS"
-           "NAMED BY SUPERIOR OBJECT CLASS"
-           "WITH ATTRIBUTE"
-           "CREATE"
-           "DELETE"
-           "ATTRIBUTES"
-           "ATTRIBUTE GROUPS"
-           "ACTIONS"
-           "NOTIFICATIONS"
-           "MODE CONFIRMED"
-           "PARAMETERS"
-           "WITH INFORMATION SYNTAX"
-           "WITH REPLY SYNTAX"
-           "CONTEXT"
-           "GROUP ELEMENTS"
-           "FIXED"
-           "DESCRIPTION") t))
-    ("_TAG_KIND" . ,(regexp-opt '("IMPLICIT" "EXPLICIT" "AUTOMATIC") t))
-    ("_WITH_SYNTAX" . "\\(WITH SYNTAX\\)")
-    ("TAGS" . "\\(TAGS\\)")
-    ("EXPORTS" . "\\(EXPORTS\\)")
-    ("BEGIN" . "\\(BEGIN\\)")
-    ("END" . "\\(END\\)")
-    ("IMPORTS" . "\\(IMPORTS\\)")
-    ("_SET" . ,(regexp-opt '("SET OF" "SEQUENCE OF") t))
-    ("_SEQ" . ,(regexp-opt '("SEQUENCE" "CHOICE" "ENUMERATED") t))
-    ("_UCASE_ID" . "\\(OBJECT IDENTIFIER\\)")
-    ("_LITERAL"  . "\\([0-9]+\\)")))
+(defun asn1-mode-regexp-opt (&rest list)
+  (concat "\\b" (regexp-opt list t) "\\b"))
 
-(defvar asn1-mode-token-regexp
-  (mapconcat (lambda (p)
-               (concat "\\b" (cdr p) "\\b"))
-             asn1-mode-token-regexp-alist "\\|"))
+(defvar asn1-mode-support-gdmo t)
 
-(defun asn1-mode-token-match-group (match-data)
+(defvar asn1-mode-token-alist nil)
+(defvar asn1-mode-token-alist-2 nil) ; second group that may conflict with first group
+(defvar asn1-mode-token-regexp nil)
+(defvar asn1-mode-token-regexp-2 nil)
+
+(defun asn1-mode-token-setup ()
+  (interactive)
+  (setq asn1-mode-token-alist
+        `(;;
+          ("_GDMO_OPEN"
+           . ,(asn1-mode-regexp-opt
+               ;; template
+               "MANAGED OBJECT CLASS"
+               "BEHAVIOUR"
+               "NAME BINDING"
+               "PACKAGE"
+               ;;"ATTRIBUTE"
+               "ACTION"
+               "NOTIFICATION"
+               "PARAMETER"
+               "ATTRIBUTE GROUP"
+               ;; supportings
+               "DERIVED FROM"
+               "CHARACTERIZED BY"
+               "CONDITIONAL PACKAGES"
+               "SUBORDINATE OBJECT CLASS"
+               "NAMED BY SUPERIOR OBJECT CLASS"
+               "WITH ATTRIBUTE"
+               "CREATE"
+               "DELETE"
+               "ATTRIBUTES"
+               "ATTRIBUTE GROUPS"
+               "ACTIONS"
+               "NOTIFICATIONS"
+               "MODE CONFIRMED"
+               "PARAMETERS"
+               "WITH INFORMATION SYNTAX"
+               "WITH REPLY SYNTAX"
+               "CONTEXT"
+               "GROUP ELEMENTS"
+               "FIXED"
+               "DESCRIPTION"))
+          ("_TAG_KIND" . ,(asn1-mode-regexp-opt "IMPLICIT" "EXPLICIT" "AUTOMATIC"))
+          ("_WITH_SYNTAX" . "\\b\\(WITH SYNTAX\\)\\b")
+          ("_CLASS" . "\\(CLASS\\)")
+          ("TAGS" . "\\b\\(TAGS\\)\\b")
+          ("EXPORTS" . "\\b\\(EXPORTS\\)\\b")
+          ("BEGIN" . "\\b\\(BEGIN\\)\\b")
+          ("END" . "\\b\\(END\\)\\b")
+          ("IMPORTS" . "\\b\\(IMPORTS\\)\\b")
+          ("_SET" . ,(asn1-mode-regexp-opt "SET OF" "SEQUENCE OF"))
+          ("_SEQ" . ,(asn1-mode-regexp-opt "SEQUENCE" "CHOICE" "ENUMERATED"))
+          ("_UCASE_ID" . "\\b\\(OBJECT IDENTIFIER\\)\\b")
+          ("_LITERAL"  . "\\b\\([0-9]+\\)\\b")
+          ("_XML_OPENER" . "\\(<[^<>/]+>\\)")
+          ("_XML_CLOSER" . "\\(</[^<>/]+>\\)")
+          ("_XML_INDEPENDENT" . "\\(<[^<>/]+/>\\)")
+          ("..." . "\\(\\.\\.\\.\\)")
+          ("::=" . "\\(::=\\)")))
+  (setq asn1-mode-token-regexp
+        (mapconcat (lambda (p)
+                     (concat (cdr p) ))
+                   asn1-mode-token-alist "\\|"))
+  (setq asn1-mode-token-alist-2
+        `(;;
+          ("_GDMO_OPEN" . "\\b\\(ATTRIBUTE\\)\\b")
+          ("_LCASE_ID" . "\\b\\([a-z&]\\(?:\\w\\|\\s_\\)+\\)\\b")
+          ("_UCASE_ID" . "\\b\\([A-Z]\\(?:\\w\\|\\s_\\)+\\)\\b")
+          ("FROM" . "\\b\\(FROM\\)\\b")))
+  (setq asn1-mode-token-regexp-2
+        (mapconcat (lambda (p)
+                     (concat (cdr p) ))
+                   asn1-mode-token-alist-2 "\\|")))
+
+
+(defun asn1-mode-token-match-group (match-data regexp-alist)
   (car (nth (/ (cl-position-if-not 'null (cddr (match-data))) 2)
-            asn1-mode-token-regexp-alist)))
+            regexp-alist)))
 
 (defun asn1-mode-forward-token ()
   (forward-comment (point-max))
@@ -386,20 +417,15 @@
   (let ((case-fold-search nil))
     (condition-case nil ; for scan-error
         (cond
-         ((looking-at "<[^<>/]+>")  (goto-char (match-end 0)) "_XML_OPENER")
-         ((looking-at "</[^<>/]+>") (goto-char (match-end 0)) "_XML_CLOSER")
-         ((looking-at "<[^<>/]+/>") (goto-char (match-end 0)) "_XML_INDEPENDENT")
-         ((looking-at "\\s\"") (goto-char (scan-sexps (point) 1)) "_LITERAL")
-         ((looking-at "{")  (goto-char (scan-sexps (point) 1)) "_BRACE")
-         ((looking-at "[([]")  (goto-char (scan-sexps (point) 1)) "_PAREN")
-         ((looking-at "::=") (goto-char (match-end 0)) "::=")
          ((looking-at asn1-mode-token-regexp)
           (goto-char (match-end 0))
-          (asn1-mode-token-match-group (match-data)))
-         ((looking-at "\\b[a-z&]\\(\\w\\|\\s_\\)+\\b")
-          (goto-char (match-end 0)) "_LCASE_ID")
-         ((looking-at "\\b[A-Z]\\(\\w\\|\\s_\\)+\\b")
-          (goto-char (match-end 0)) "_UCASE_ID")
+          (asn1-mode-token-match-group (match-data) asn1-mode-token-alist))
+         ((looking-at asn1-mode-token-regexp-2)
+          (goto-char (match-end 0))
+          (asn1-mode-token-match-group (match-data) asn1-mode-token-alist-2))
+         ((looking-at "\\s\"") (goto-char (scan-sexps (point) 1)) "_LITERAL")
+         ((looking-at "{")     (goto-char (scan-sexps (point) 1)) "_BRACE")
+         ((looking-at "[([]")  (goto-char (scan-sexps (point) 1)) "_PAREN")
          (t (buffer-substring-no-properties
              (point)
              (progn
@@ -415,20 +441,15 @@
     (condition-case nil ; for scan-error
         (cond
          ((bobp) nil)
-         ((looking-back "<[^<>/]+>")  (goto-char (match-beginning 0)) "_XML_OPENER")
-         ((looking-back "</[^<>/]+>") (goto-char (match-beginning 0)) "_XML_CLOSER")
-         ((looking-back "<[^<>/]+/>") (goto-char (match-beginning 0)) "_XML_INDEPENDENT")
-         ((looking-back "\\s\"") (goto-char (scan-sexps (point) -1)) "_LITERAL")
-         ((looking-back "}") (goto-char (scan-sexps (point) -1)) "_BRACE")
-         ((looking-back "[])]")  (goto-char (scan-sexps (point) -1)) "_PAREN")
-         ((looking-back "::=") (goto-char (match-beginning 0)) "::=")
          ((looking-back asn1-mode-token-regexp)
           (goto-char (match-beginning 0))
-          (asn1-mode-token-match-group (match-data)))
-         ((looking-back "\\b[a-z]\\(\\w\\|\\s_\\)+\\b")
-          (goto-char (match-beginning 0)) "_LCASE_ID")
-         ((looking-back "\\b[A-Z]\\(\\w\\|\\s_\\)+\\b")
-          (goto-char (match-beginning 0)) "_UCASE_ID")
+          (asn1-mode-token-match-group (match-data) asn1-mode-token-alist))
+         ((looking-back asn1-mode-token-regexp-2)
+          (goto-char (match-beginning 0))
+          (asn1-mode-token-match-group (match-data) asn1-mode-token-alist-2))
+         ((looking-back "\\s\"") (goto-char (scan-sexps (point) -1)) "_LITERAL")
+         ((looking-back "}")     (goto-char (scan-sexps (point) -1)) "_BRACE")
+         ((looking-back "[])]")  (goto-char (scan-sexps (point) -1)) "_PAREN")
          (t (buffer-substring-no-properties
              (point)
              (progn
@@ -453,8 +474,7 @@
        (imports
         ("IMPORTS" imports-body ";"))
        (imports-body
-        ;;(tokens "FROM" "_UCASE_ID" paren)) "FROM" may conflict with "DERIVED FROM"
-        (tokens))
+        (tokens "FROM" "_UCASE_ID" paren)) ; "FROM" may conflict with "DERIVED FROM"
        (assignment
         (type "::=" type)
         (type "::=" value)
@@ -470,6 +490,7 @@
         ("_SEQ" paren))
        (value
         (type ":" value)
+        (type "." value)
         ("_LCASE_ID")
         ("_LITERAL"))
        (tokens
@@ -506,6 +527,9 @@
     (with-current-buffer (get-buffer-create "*trace-output*")
       (insert message "\n"))))
 
+(defun asn1-mode-backward-token-to (token)
+  (while (not (equal (asn1-mode-backward-token) token))))
+
 (defun asn1-mode-smie-rules (kind token)
   "ASN.1 SMIE indentation function for KIND and TOKEN."
   (when asn1-mode-debug
@@ -519,27 +543,38 @@
     (`(:before . ,(or `"IMPORTS" "EXPORTS"))
      (smie-rule-parent))
     (`(:before . "END") nil)
-    (`(:before . "_BRACE") ; position of "}" is the same as indentation of "{" for ASN.1.
-     `(column . ,(current-indentation)))
+    ;; if _BRACE is hanging, then the position of "}" is the same as indentation of "{" for ASN.1.
+    (`(:before . ,(or `"_PAREN" "_BRACE"))
+     (if (smie-rule-hanging-p) `(column . ,(current-indentation))))
     (`(:before . ",")
      `(column . ,(current-indentation)))
     (`(:before . "_GDMO_OPEN")
      nil)
+    ;; Default is nil, unless parent is "::=".
     (`(:before . ,_) ; for the rest
-     (if (smie-rule-parent-p "::=" "{" "("  "_GDMO_OPEN" "IMPORTS" "EXPORTS")
-         smie-indent-basic
-       (smie-rule-parent)))
+     (when (smie-rule-parent-p "::=")
+       (save-excursion
+         (asn1-mode-backward-token-to "::=")
+         `(column . ,(current-indentation)))))
+     ;(if (smie-rule-parent-p "::=" "{" "("  "_GDMO_OPEN" "IMPORTS" "EXPORTS")
+     ;    (save-excursion
+     ;      (asn1-mode-backward-token)
+     ;      (cons 'column (current-indentation)))
     ;; :after
-    (`(:after . ",")
-     `(column . ,(current-indentation)))
     (`(:after . ";")
      nil)
+    ;; AFTER open parenthesis, basic + current indentation is appropriate.
     (`(:after . ,(or `"::=" `"{" `"(" `"_GDMO_OPEN" `"IMPORTS" `"EXPORTS"))
-     smie-indent-basic)
+     `(column . ,(+ smie-indent-basic (current-indentation))))
+    ;; for any AFTER, if parent is "::=", then its current-indentation is indentation.
     (`(:after . ,_)
-     `(column . ,(current-indentation)))
+     (if (smie-rule-parent-p "::=")
+         (save-excursion
+           (asn1-mode-backward-token-to "::=")
+           `(column . ,(current-indentation)))))
     ;; misc
     (`(:list-intro . ,_) t)
+    (`(:elem . ,_) 0)
     (t nil)))
 
 (defun asn1-mode-toggle-debug ()
@@ -576,5 +611,10 @@ if that value is non-nil."
   (setq-local outline-level 'asn1-mode-outline-level))
 
 (provide 'asn1-mode)
+
+;; Local Variables:
+;; coding: utf-8-unix
+;; time-stamp-pattern: "10/Modified:\\\\?[ \t]+%:y-%02m-%02d\\\\?\n"
+;; End:
 
 ;;; asn1-mode.el ends here
