@@ -1,18 +1,18 @@
 ;;; asn1-mode.el --- ASN.1/GDMO mode for GNU Emacs
 
 ;; Filename: asn1-mode.el
-;; Package-Requires: ((emacs "24.3") (s "1.8.0"))
+;; Package-Requires: ((emacs "24.3"))
 ;; Description: ASN.1/GDMO Editing Mode
 ;; Author: Taichi Kawabata <kawabata.taichi_at_gmail.com>
 ;; Created: 2013-11-22
-;; Modified: 2013-12-11
+;; Modified: 2013-12-18
 ;; Keywords: languages, processes, tools
 ;; Namespace: asn1-mode-
 ;; URL: https://github.com/kawabata/asn1-mode/
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
-;; the Free Software Foundation, either version 3 of the License, or
+ ;; the Free Software Foundation, either version 3 of the License, or
 ;; (at your option) any later version.
 
 ;; This program is distributed in the hope that it will be useful,
@@ -25,27 +25,37 @@
 
 ;;; Commentary:
 
-;; # ASN.1/GDMO mode for GNU Emacs
+;; * ASN.1/GDMO mode for GNU Emacs
 ;;
-;; This is a major mode for editing ASN.1 specification.
+;; This is a major mode for editing ASN.1/GDMO files.
 ;;
-;; ## Setup
+;; ** Setup
 ;;
 ;; For installation, please add the following lines to your ~/.emacs:
 ;;
-;; ```el
-;; (add-to-list 'auto-mode-alist '("\\.asn1$" . asn1-mode))
-;; ```
+;; : (add-to-list 'auto-mode-alist '("\\.asn1$" . asn1-mode))
+;; : (add-to-list 'auto-mode-alist '("\\.gdmo$" . asn1-mode))
 ;;
-;; ## Reference
-;; - [ITU-T X.680](http://www.itu.int/ITU-T/recommendations/rec.aspx?rec=9604)
-;; - [ITU-T X.722](http://www.itu.int/ITU-T/recommendations/rec.aspx?rec=3061)
+;; ** Reference
+
+;; - [[http://www.itu.int/ITU-T/recommendations/rec.aspx?rec=9604]
+;;    [ITU-T X.680 Information technology – Abstract Syntax Notation
+;;    One (ASN.1): Specification of basic notation]]
+;; - [[http://www.itu.int/ITU-T/recommendations/rec.aspx?rec=9605]
+;;    [ITU-T X.681 Information technology – Abstract Syntax Notation
+;;    One (ASN.1): Information object specification]]
+;; - [[http://www.itu.int/ITU-T/recommendations/rec.aspx?rec=3061]
+;;    [ITU-T X.722: INFORMATION TECHNOLOGY – OPEN SYSTEMS
+;;     INTERCONNECTION – STRUCTURE OF MANAGEMENT INFORMATION:
+;;     GUIDELINES FOR THE DEFINITION OF MANAGED OBJECTS]]
 
 ;;; Code:
 
 (require 'smie)
 (require 'cl-lib)
 (require 's)
+
+(defvar asn1-mode-support-gdmo t) ;; defcustom?
 
 (defvar asn1-mode-map
   (let ((map (make-sparse-keymap)))
@@ -63,7 +73,7 @@
     (modify-syntax-entry '(?0 . ?9) "w" syntax-table)
     (modify-syntax-entry ?!  "."        syntax-table)
     (modify-syntax-entry ?\" "\""       syntax-table)
-    (modify-syntax-entry ?&  "w"        syntax-table) ; syntax identifier
+    (modify-syntax-entry ?&  "w"        syntax-table) ; field reference, cf. X.681/7.
     (modify-syntax-entry ?'  "\""       syntax-table)
     (modify-syntax-entry ?\( "()"       syntax-table)
     (modify-syntax-entry ?\) ")("       syntax-table)
@@ -186,6 +196,7 @@
       "WITH"
       ;; ITU-T X.681
       "OBJECT IDENTIFIER"
+      "IDENTIFIED BY"
       "WITH SYNTAX"
       ;; GDMO (duplicate keywords may appear)
       "MANAGED OBJECT CLASS"
@@ -198,7 +209,7 @@
       "PACKAGE"
       "BEHAVIOUR"
       "ATTRIBUTES"
-      "ATTRIBUTE" "GROUPS"
+      "ATTRIBUTE GROUPS"
       "ACTIONS"
       "NOTIFICATIONS"
       ;;
@@ -292,23 +303,19 @@
      1 font-lock-function-name-face)))
 
 ;;;; abbrev table
-
 (define-abbrev-table 'asn1-mode-abbrev-table ())
 
 ;; automatically define abbrev table.
 (dolist (kw (sort (copy-sequence asn1-mode-keywords)
                   (lambda (a b) (< (length a) (length b)))))
-  (let* ((abbrev (downcase (substring kw 0 2)))
-         (kw2 (upcase kw))
-         (exp (abbrev-expansion abbrev asn1-mode-abbrev-table))
-         common prefix)
-    (while (and exp (not (equal kw exp)))
-      (setq common (s-shared-start (upcase exp) kw2))
-      (setq prefix (aref kw (length common)))
-      (when (or (= prefix 32) (= prefix ?-))
-         (setq prefix (aref kw (1+ (length common)))))
-      (setq abbrev (downcase (concat abbrev (string prefix))))
-      (setq exp (abbrev-expansion abbrev asn1-mode-abbrev-table)))
+  (let* ((i 1)
+         (split (split-string (downcase kw) "[- ]"))
+         (base  (apply 'string (mapcar 'string-to-char split)))
+         (last  (car (last split)))
+         (abbrev base))
+    (while (abbrev-expansion abbrev asn1-mode-abbrev-table)
+      (setq i (1+ i))
+      (setq abbrev (concat base (substring last 1 i))))
     (define-abbrev asn1-mode-abbrev-table abbrev kw)))
 
 ;; (insert-abbrev-table-description 'asn1-mode-abbrev-table)
@@ -330,8 +337,6 @@
 (defun asn1-mode-regexp-opt (&rest list)
   (concat "\\b" (regexp-opt list t) "\\b"))
 
-(defvar asn1-mode-support-gdmo t)
-
 (defvar asn1-mode-token-alist nil)
 (defvar asn1-mode-token-alist-2 nil) ; second group that may conflict with first group
 (defvar asn1-mode-token-regexp nil)
@@ -340,51 +345,55 @@
 (defun asn1-mode-token-setup ()
   (interactive)
   (setq asn1-mode-token-alist
-        `(;;
-          ("_GDMO_OPEN"
-           . ,(asn1-mode-regexp-opt
-               ;; template
-               "MANAGED OBJECT CLASS"
-               "BEHAVIOUR"
-               "NAME BINDING"
-               "PACKAGE"
-               ;;"ATTRIBUTE"
-               "ACTION"
-               "NOTIFICATION"
-               "PARAMETER"
-               "ATTRIBUTE GROUP"
-               ;; supportings
-               "DERIVED FROM"
-               "CHARACTERIZED BY"
-               "CONDITIONAL PACKAGES"
-               "SUBORDINATE OBJECT CLASS"
-               "NAMED BY SUPERIOR OBJECT CLASS"
-               "WITH ATTRIBUTE"
-               "CREATE"
-               "DELETE"
-               "ATTRIBUTES"
-               "ATTRIBUTE GROUPS"
-               "ACTIONS"
-               "NOTIFICATIONS"
-               "MODE CONFIRMED"
-               "PARAMETERS"
-               "WITH INFORMATION SYNTAX"
-               "WITH REPLY SYNTAX"
-               "CONTEXT"
-               "GROUP ELEMENTS"
-               "FIXED"
-               "DESCRIPTION"))
+        `(
+          ,@(when asn1-mode-support-gdmo
+              `(("_GDMO_OPEN"
+                 . ,(asn1-mode-regexp-opt
+                     ;; template
+                     "MANAGED OBJECT CLASS"
+                     "BEHAVIOUR"
+                     "NAME BINDING"
+                     "PACKAGE"
+                     ;;"ATTRIBUTE"
+                     "ACTION"
+                     "NOTIFICATION"
+                     "PARAMETER"
+                     "ATTRIBUTE GROUP"
+                     ;; supportings
+                     "DERIVED FROM"
+                     "CHARACTERIZED BY"
+                     "CONDITIONAL PACKAGES"
+                     "SUBORDINATE OBJECT CLASS"
+                     "NAMED BY SUPERIOR OBJECT CLASS"
+                     "WITH ATTRIBUTE"
+                     "CREATE"
+                     "DELETE"
+                     "ATTRIBUTES"
+                     "ATTRIBUTE GROUPS"
+                     "ACTIONS"
+                     "NOTIFICATIONS"
+                     "MODE CONFIRMED"
+                     "PARAMETERS"
+                     "WITH INFORMATION SYNTAX"
+                     "WITH REPLY SYNTAX"
+                     "CONTEXT"
+                     "GROUP ELEMENTS"
+                     "FIXED"
+                     "DESCRIPTION"))
+                ("_REGISTERED_AS" .
+                 "\\b\\(REGISTERED AS\\)\\b")))
           ("_TAG_KIND" . ,(asn1-mode-regexp-opt "IMPLICIT" "EXPLICIT" "AUTOMATIC"))
           ("_WITH_SYNTAX" . "\\b\\(WITH SYNTAX\\)\\b")
           ("_CLASS" . "\\(CLASS\\)")
           ("TAGS" . "\\b\\(TAGS\\)\\b")
+          ("DEFINITIONS" . "\\b\\(DEFINITIONS\\)\\b")
           ("EXPORTS" . "\\b\\(EXPORTS\\)\\b")
           ("BEGIN" . "\\b\\(BEGIN\\)\\b")
           ("END" . "\\b\\(END\\)\\b")
           ("IMPORTS" . "\\b\\(IMPORTS\\)\\b")
           ("_SET" . ,(asn1-mode-regexp-opt "SET OF" "SEQUENCE OF"))
           ("_SEQ" . ,(asn1-mode-regexp-opt "SEQUENCE" "CHOICE" "ENUMERATED"))
-          ("_UCASE_ID" . "\\b\\(OBJECT IDENTIFIER\\)\\b")
+          ("_UCASE_ID" . ,(asn1-mode-regexp-opt "OBJECT IDENTIFIER" "BIT STRING" "OCTET STRING"))
           ("_LITERAL"  . "\\b\\([0-9]+\\)\\b")
           ("_XML_OPENER" . "\\(<[^<>/]+>\\)")
           ("_XML_CLOSER" . "\\(</[^<>/]+>\\)")
@@ -396,16 +405,15 @@
                      (concat (cdr p) ))
                    asn1-mode-token-alist "\\|"))
   (setq asn1-mode-token-alist-2
-        `(;;
-          ("_GDMO_OPEN" . "\\b\\(ATTRIBUTE\\)\\b")
+        `(,@(when asn1-mode-support-gdmo
+              '(("_GDMO_OPEN" . "\\b\\(ATTRIBUTE\\)\\b")))
+          ("FROM" . "\\b\\(FROM\\)\\b")
           ("_LCASE_ID" . "\\b\\([a-z&]\\(?:\\w\\|\\s_\\)+\\)\\b")
-          ("_UCASE_ID" . "\\b\\([A-Z]\\(?:\\w\\|\\s_\\)+\\)\\b")
-          ("FROM" . "\\b\\(FROM\\)\\b")))
+          ("_UCASE_ID" . "\\b\\([A-Z]\\(?:\\w\\|\\s_\\)+\\)\\b")))
   (setq asn1-mode-token-regexp-2
         (mapconcat (lambda (p)
                      (concat (cdr p) ))
                    asn1-mode-token-alist-2 "\\|")))
-
 
 (defun asn1-mode-token-match-group (match-data regexp-alist)
   (car (nth (/ (cl-position-if-not 'null (cddr (match-data))) 2)
@@ -464,7 +472,7 @@
     (smie-bnf->prec2
      `(
        (module-body
-        ("BEGIN" module-body2 "END"))
+        ("DEFINITIONS" "_TAG_KIND" "TAGS" "::=" "BEGIN" module-body2 "END"))
        (module-body2
         (exports)
         (imports)
@@ -474,12 +482,17 @@
        (imports
         ("IMPORTS" imports-body ";"))
        (imports-body
-        (tokens "FROM" "_UCASE_ID" paren)) ; "FROM" may conflict with "DERIVED FROM"
+        (tokens "FROM" "_UCASE_ID" paren))
        (assignment
-        (type "::=" type)
-        (type "::=" value)
-        (type "::=" xmlvalue)
-        (type "::=" objectclass))
+        (ucase-id "::=" paren)
+        (ucase-id "::=" type)
+        (ucase-id "::=" value)
+        (ucase-id "::=" xmlvalue)
+        (ucase-id "::=" objectclass))
+       (ucase-id
+        ("_UCASE_ID"))
+       (lcase-id
+        ("_LCASE_ID"))
        (objectclass
         ("_CLASS" "_BRACE" with-syntax))
        (with-syntax
@@ -496,7 +509,8 @@
        (tokens
         (type)
         (value)
-        (tokens "," tokens))
+        (tokens "," tokens)
+        (tokens "|" tokens))
        (token
         ("_UCASE_ID")
         ("_LCASE_ID"))
@@ -520,7 +534,7 @@
         (gdmo-inside "," gdmo-inside)
         ("_LCASE_ID")
         ("_UCASE_ID")))
-     '((assoc "_UCASE_ID" "_LCASE_ID" ","))))))
+     '((assoc "_UCASE_ID" "_LCASE_ID" "," "|"))))))
 
 (defun asn1-mode-debug (&rest message)
   (let ((message (apply 'format message)))
@@ -540,31 +554,40 @@
     (asn1-mode-debug "indent-parent=%s" (nth 2 (smie-indent--parent))))
   (pcase (cons kind token)
     ;; :before
-    (`(:before . ,(or `"IMPORTS" "EXPORTS"))
+    (`(:before . ,(or `"IMPORTS" `"EXPORTS"))
      (smie-rule-parent))
     (`(:before . "END") nil)
-    ;; if _BRACE is hanging, then the position of "}" is the same as indentation of "{" for ASN.1.
+    ;; if _BRACE is hanging, then the position of "}" is the same as
+    ;; indentation of "{" for ASN.1.
     (`(:before . ,(or `"_PAREN" "_BRACE"))
      (if (smie-rule-hanging-p) `(column . ,(current-indentation))))
-    (`(:before . ",")
-     `(column . ,(current-indentation)))
+    (`(:before . ,(or `"," `"|" `"."))
+     (if (smie-rule-parent-p "{")
+         ;; when parent is {, then indentation should be based on this.
+         (save-excursion
+           (asn1-mode-backward-token-to "{")
+           `(column . ,(+ smie-indent-basic (current-indentation))))
+       `(column . ,(current-indentation))))
     (`(:before . "_GDMO_OPEN")
      nil)
     ;; Default is nil, unless parent is "::=".
     (`(:before . ,_) ; for the rest
-     (when (smie-rule-parent-p "::=")
+     (if (smie-rule-parent-p "::=")
        (save-excursion
          (asn1-mode-backward-token-to "::=")
-         `(column . ,(current-indentation)))))
-     ;(if (smie-rule-parent-p "::=" "{" "("  "_GDMO_OPEN" "IMPORTS" "EXPORTS")
-     ;    (save-excursion
-     ;      (asn1-mode-backward-token)
-     ;      (cons 'column (current-indentation)))
+         `(column . ,(current-indentation)))
+       (if (smie-rule-parent-p "_BRACE")
+           (save-excursion
+             (asn1-mode-backward-token-to "_BRACE")
+             `(column . ,(current-indentation))))))
     ;; :after
     (`(:after . ";")
      nil)
     ;; AFTER open parenthesis, basic + current indentation is appropriate.
+    (`(:after . ,`"_XML_OPENER")
+     smie-indent-basic)
     (`(:after . ,(or `"::=" `"{" `"(" `"_GDMO_OPEN" `"IMPORTS" `"EXPORTS"))
+     ;;smie-indent-basic)
      `(column . ,(+ smie-indent-basic (current-indentation))))
     ;; for any AFTER, if parent is "::=", then its current-indentation is indentation.
     (`(:after . ,_)
@@ -596,6 +619,7 @@ Entry to this mode calls the value of `asn1-mode-hook'
 if that value is non-nil."
   :syntax-table asn1-mode-syntax-table
   :abbrev-table asn1-mode-abbrev-table
+  (asn1-mode-token-setup)
   (smie-setup asn1-mode-smie-grammar #'asn1-mode-smie-rules
               :forward-token 'asn1-mode-forward-token
               :backward-token 'asn1-mode-backward-token)
