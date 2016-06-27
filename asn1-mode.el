@@ -322,7 +322,7 @@
 
 ;; (insert-abbrev-table-description 'asn1-mode-abbrev-table)
 
-(defvar asn1-mode-imenu-expression)
+(defvar asn1-mode-imenu-expression '((nil "^\\([A-Za-z-_]+\\).*::=.*" 1)))
 
 ;;;; outline
 
@@ -634,7 +634,8 @@ if that value is non-nil."
   (setq-local comment-start-skip nil)
   (setq-local font-lock-defaults '(asn1-mode-font-lock-keywords nil nil))
   (setq-local outline-regexp asn1-mode-outline-regexp)
-  (setq-local outline-level 'asn1-mode-outline-level))
+  (setq-local outline-level 'asn1-mode-outline-level)
+  (setq-local imenu-generic-expression asn1-mode-imenu-expression))
 
 (provide 'asn1-mode)
 
