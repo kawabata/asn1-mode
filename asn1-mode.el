@@ -1,11 +1,11 @@
 ;;; asn1-mode.el --- ASN.1/GDMO mode for GNU Emacs
 
 ;; Filename: asn1-mode.el
-;; Package-Requires: ((emacs "24.3"))
+;; Package-Requires: ((emacs "24.3") (s "1.10.0"))
 ;; Description: ASN.1/GDMO Editing Mode
 ;; Author: Taichi Kawabata <kawabata.taichi_at_gmail.com>
 ;; Created: 2013-11-22
-;; Version: 1.170726
+;; Version: 1.170729
 ;; Keywords: languages, processes, tools
 ;; Namespace: asn1-, gdmo-
 ;; URL: https://github.com/kawabata/asn1-mode/
@@ -48,6 +48,8 @@
 
 (require 'smie)
 (require 'cl-lib)
+(require 's)
+(require 'trace)
 
 (declare-function untrace-function "trace.el")
 
@@ -316,23 +318,23 @@
 
 ;; abbrev table setup
 (defun asn1-mode-abbrev-table ()
-  (dolist (kw (sort (copy-sequence gdmo-mode-keywords)
-                    (lambda (a b) (< (length a) (length b)))))
-    (let* ((i 1)
-           (split (split-string (downcase kw) "[- ]"))
-           (base  (apply 'string (mapcar 'string-to-char split)))
-           (last  (car (last split)))
-           (abbrev base) exp)
-      (while (and (setq exp (abbrev-expansion abbrev asn1-mode-abbrev-table))
-                  (not (equal exp kw)))
-        (setq i (1+ i))
-        (setq abbrev (concat base (substring last 1 i))))
-      (when (not (equal exp kw))
-        (define-abbrev asn1-mode-abbrev-table abbrev kw)))))
+  ;; automatically define abbrev table.
+  (dolist (kw (sort (copy-sequence asn1-mode-keywords)
+                  (lambda (a b) (< (length a) (length b)))))
+  (let* ((i 1)
+         (split (split-string (downcase kw) "[- ]"))
+         (base  (apply 'string (mapcar 'string-to-char split)))
+         (last  (car (last split)))
+         (abbrev base))
+    (while (and (abbrev-expansion abbrev asn1-mode-abbrev-table)
+                (< i (length last)))
+      (setq i (1+ i))
+      (setq abbrev (concat base (substring last 1 i))))
+    (define-abbrev asn1-mode-abbrev-table abbrev kw))))
 
 ;; (insert-abbrev-table-description 'asn1-mode-abbrev-table)
 
-(defvar asn1-mode-imenu-expression)
+(defvar asn1-mode-imenu-expression '((nil "^\\([A-Za-z-_]+\\).*::=.*" 1)))
 
 ;;;; outline
 
@@ -656,7 +658,8 @@
   (setq-local comment-end "") ; comment ends at end of line
   (setq-local comment-start-skip nil)
   (setq-local outline-regexp asn1-mode-outline-regexp)
-  (setq-local outline-level 'asn1-mode-outline-level))
+  (setq-local outline-level 'asn1-mode-outline-level)
+  (setq-local imenu-generic-expression asn1-mode-imenu-expression))
 
 ;;;###autoload
 (define-derived-mode asn1-mode prog-mode "ASN.1"
