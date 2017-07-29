@@ -470,15 +470,15 @@
     (condition-case nil ; for scan-error
         (cond
          ((bobp) nil)
-         ((looking-back asn1-mode-token-regexp)
+         ((looking-back asn1-mode-token-regexp nil)
           (goto-char (match-beginning 0))
           (asn1-mode-token-match-group (match-data) asn1-mode-token-alist))
-         ((looking-back asn1-mode-token-regexp-2)
+         ((looking-back asn1-mode-token-regexp-2 nil)
           (goto-char (match-beginning 0))
           (asn1-mode-token-match-group (match-data) asn1-mode-token-alist-2))
-         ((looking-back "\\s\"") (goto-char (scan-sexps (point) -1)) "_LITERAL")
-         ((looking-back "}")     (goto-char (scan-sexps (point) -1)) "_BRACE")
-         ((looking-back "[])]")  (goto-char (scan-sexps (point) -1)) "_PAREN")
+         ((looking-back "\\s\"" nil) (goto-char (scan-sexps (point) -1)) "_LITERAL")
+         ((looking-back "}" nil)     (goto-char (scan-sexps (point) -1)) "_BRACE")
+         ((looking-back "[])]" nil)  (goto-char (scan-sexps (point) -1)) "_PAREN")
          (t (buffer-substring-no-properties
              (point)
              (progn
@@ -675,7 +675,7 @@ if that value is non-nil."
 
 
 ;;;###autoload
-(define-derived-mode gdmo-mode prog-mode "ASN.1"
+(define-derived-mode gdmo-mode prog-mode "GDMO"
   "Major mode for editing GDMO text files in Emacs.
 
 \\{asn1-mode-map}
