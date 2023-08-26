@@ -1,7 +1,7 @@
 ;;; asn1-mode.el --- ASN.1/GDMO mode for GNU Emacs
 
 ;; Filename: asn1-mode.el
-;; Package-Requires: ((emacs "24.3") (s "1.10.0"))
+;; Package-Requires: ((emacs "24.3"))
 ;; Description: ASN.1/GDMO Editing Mode
 ;; Author: Taichi Kawabata <kawabata.taichi_at_gmail.com>
 ;; Created: 2013-11-22
@@ -48,7 +48,6 @@
 
 (require 'smie)
 (require 'cl-lib)
-(require 's)
 (require 'trace)
 
 (declare-function untrace-function "trace.el")
